@@ -31,6 +31,11 @@ type Profile struct {
 	Depth     string   `json:"depth"`
 }
 
+type SentimentConfig struct {
+	Enabled  bool   `json:"enabled"`
+	ModelDir string `json:"model_dir"` // where finbert.onnx + tokenizer.json live
+}
+
 type State struct {
 	Configured  bool      `json:"configured"`
 	LLM         LLMConfig `json:"llm"`
@@ -39,6 +44,7 @@ type State struct {
 	BotUsername string    `json:"bot_username"`
 	ChatID      int64     `json:"chat_id"`
 	Profile     Profile   `json:"profile"`
+	Sentiment   SentimentConfig `json:"sentiment"`
 }
 
 type Store struct {

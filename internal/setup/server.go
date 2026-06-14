@@ -32,6 +32,11 @@ type Profile struct {
 	Depth     string   `json:"depth"` // headline | standard | deep
 }
 
+type SentimentConfig struct {
+	Enabled  bool   `json:"enabled"`
+	ModelDir string `json:"model_dir"`
+}
+
 type State struct {
 	Configured  bool      `json:"configured"`
 	LLM         LLMConfig `json:"llm"`
@@ -40,6 +45,7 @@ type State struct {
 	BotUsername string    `json:"bot_username"`
 	ChatID      int64     `json:"chat_id"`
 	Profile     Profile   `json:"profile"`
+	Sentiment   SentimentConfig `json:"sentiment"`
 }
 
 type Server struct {
@@ -145,6 +151,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/telegram/chat", s.guard(s.handleTelegramChat))
 	s.mux.HandleFunc("/api/profile", s.guard(s.handleProfile))
 	s.mux.HandleFunc("/api/finish", s.guard(s.handleFinish))
+	s.mux.HandleFunc("/api/sentiment", s.guard(s.handleSentiment))
 }
 
 // guard requires the setup-code cookie set by /api/unlock.

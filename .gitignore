@@ -12,3 +12,11 @@ config.yaml
 /bourse
 /bin/
 dist/
+
+# ML model artifacts — never commit weights (bloats history forever)
+*.onnx
+*.bin
+*.safetensors
+*.pt
+data/models/
+**/.cache/huggingface/

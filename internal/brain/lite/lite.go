@@ -14,6 +14,7 @@ import (
 
 	"bourse/internal/brain"
 	"bourse/internal/llm"
+	"bourse/internal/sentiment"
 	"bourse/internal/sources"
 	"bourse/internal/store"
 )
@@ -26,13 +27,20 @@ type Brain struct {
 	prices sources.PriceSource
 	news   sources.NewsSource
 	lens   string
+	sent   *sentiment.Scorer // nil when disabled
 }
 
 func New(st *store.Store, lens string) *Brain {
 	if lens == "" {
 		lens = defaultLens
 	}
-	return &Brain{st: st, prices: sources.Yahoo{}, news: sources.GoogleNews{}, lens: lens}
+	b := &Brain{st: st, prices: sources.Yahoo{}, news: sources.GoogleNews{}, lens: lens}
+	if c := st.State.Sentiment; c.Enabled && c.ModelDir != "" {
+		if sc, err := sentiment.NewScorer(c.ModelDir); err == nil {
+			b.sent = sc
+		}
+	}
+	return b
 }
 
 func (b *Brain) Research(ctx context.Context, watchlist []string, profile store.Profile) (brain.ResearchBundle, error) {
@@ -48,8 +56,23 @@ func (b *Brain) Research(ctx context.Context, watchlist []string, profile store.
 		fmt.Fprintf(&ctxBuf, "\n## %s\nprice %.2f (%+.2f%% vs prev close), 5d range %.2f–%.2f\n",
 			sym, q.Price, q.ChangePct, q.Low5d, q.High5d)
 		hs, _ := b.news.Headlines(sym, 4)
-		for _, h := range hs {
-			fmt.Fprintf(&ctxBuf, "- %s\n", h.Title)
+		titles := make([]string, len(hs))
+		for i, h := range hs {
+			titles[i] = h.Title
+		}
+		var scores []float32
+		if b.sent != nil {
+			scores, _ = b.sent.Score(titles) // best-effort; nil on error
+		}
+		if scores != nil && len(scores) != len(hs) {
+			scores = nil // length mismatch — fall back to plain printing
+		}
+		for i, h := range hs {
+			if scores != nil {
+				fmt.Fprintf(&ctxBuf, "- %s %s\n", h.Title, sentiment.Signal(scores[i]))
+			} else {
+				fmt.Fprintf(&ctxBuf, "- %s\n", h.Title)
+			}
 		}
 	}
 	if ctxBuf.Len() == 0 {
