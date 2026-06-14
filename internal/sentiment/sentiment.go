@@ -37,7 +37,7 @@ func NewScorer(dir string) (*Scorer, error) {
 
 	session, err := ort.NewDynamicAdvancedSession(
 		filepath.Join(dir, "finbert.onnx"),
-		[]string{"input_ids", "attention_mask"},
+		[]string{"input_ids", "attention_mask", "token_type_ids"},
 		[]string{"logits"},
 		nil, // SessionOptions — use defaults
 	)
@@ -76,9 +76,17 @@ func (s *Scorer) Score(headlines []string) ([]float32, error) {
 		}
 		defer maskTensor.Destroy() //nolint:gocritic
 
+		// token_type_ids: all zeros for single-sequence classification. The
+		// FinBERT ONNX export requires this third input.
+		typeTensor, err := ort.NewTensor[int64](shape, make([]int64, maxSeqLen))
+		if err != nil {
+			return nil, fmt.Errorf("create token_type_ids tensor: %w", err)
+		}
+		defer typeTensor.Destroy() //nolint:gocritic
+
 		// Pass nil for the output; DynamicAdvancedSession auto-allocates it.
 		outputs := []ort.Value{nil}
-		inputs := []ort.Value{idsTensor, maskTensor}
+		inputs := []ort.Value{idsTensor, maskTensor, typeTensor}
 
 		if err := s.session.Run(inputs, outputs); err != nil {
 			return nil, fmt.Errorf("onnx inference: %w", err)
