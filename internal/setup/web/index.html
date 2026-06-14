@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bourse · setup</title>
+<style>
+  :root { --ink:#0f1115; --muted:#6b7280; --line:#e6e8eb; --accent:#0b6; --bad:#c0392b; --bg:#fbfbfc; }
+  * { box-sizing:border-box }
+  body { font:16px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif; color:var(--ink);
+         background:var(--bg); margin:0; }
+  .wrap { max-width:560px; margin:0 auto; padding:48px 22px 80px; }
+  .brand { font-weight:700; letter-spacing:-.02em; font-size:20px; }
+  .brand .dot { color:var(--accent); }
+  .tag { color:var(--muted); margin:2px 0 28px; font-size:14px; }
+  .card { background:#fff; border:1px solid var(--line); border-radius:14px; padding:24px; }
+  h2 { font-size:19px; margin:0 0 6px; letter-spacing:-.01em; }
+  .sub { color:var(--muted); font-size:14px; margin:0 0 18px; }
+  label { display:block; font-size:13px; color:var(--muted); margin:14px 0 6px; }
+  input, select { width:100%; padding:11px 12px; border:1px solid var(--line); border-radius:9px; font-size:15px; }
+  .opts { display:grid; gap:10px; margin:6px 0; }
+  .opt { border:1px solid var(--line); border-radius:11px; padding:14px; cursor:pointer; transition:.12s; }
+  .opt:hover { border-color:#b9c0c7; }
+  .opt.sel { border-color:var(--accent); box-shadow:0 0 0 2px rgba(0,187,102,.12); }
+  .opt b { display:block; }
+  .opt span { color:var(--muted); font-size:13px; }
+  button.go { margin-top:20px; width:100%; padding:13px; border:0; border-radius:10px; background:var(--ink);
+              color:#fff; font-size:15px; font-weight:600; cursor:pointer; }
+  button.go:disabled { opacity:.45; cursor:not-allowed; }
+  .ghost { background:none; border:1px solid var(--line); color:var(--ink); }
+  .msg { margin-top:14px; font-size:14px; padding:11px 12px; border-radius:9px; display:none; }
+  .msg.ok { display:block; background:#e9f9f1; color:#06623b; }
+  .msg.err { display:block; background:#fdecea; color:var(--bad); }
+  .steps { display:flex; gap:6px; margin-bottom:22px; }
+  .steps i { height:4px; flex:1; border-radius:3px; background:var(--line); }
+  .steps i.on { background:var(--accent); }
+  .chips { display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }
+  .chip { border:1px solid var(--line); border-radius:999px; padding:6px 12px; font-size:13px; cursor:pointer; }
+  .chip.sel { background:var(--ink); color:#fff; border-color:var(--ink); }
+  .disc { font-size:12px; color:var(--muted); margin-top:18px; }
+  a { color:var(--accent); }
+  .row2 { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="brand">Bourse<span class="dot">.</span></div>
+  <div class="tag">the market agent that keeps score</div>
+  <div class="steps" id="steps"></div>
+  <div class="card" id="card"></div>
+  <div class="disc">Bourse is for research and education — <b>not investment advice</b>. It logs every call it makes and grades it against what actually happens.</div>
+</div>
+<script>
+const TOTAL = 6;
+let step = 0;
+const data = { llm:{}, tg:{}, profile:{ watchlist:[] } };
+const card = document.getElementById('card');
+const stepsEl = document.getElementById('steps');
+
+const WATCH = {
+  conservative: ["AAPL","MSFT","JNJ","KO","BRK-B","SPY"],
+  balanced:     ["AAPL","MSFT","NVDA","GOOGL","AMZN","SPY"],
+  aggressive:   ["NVDA","TSLA","AMD","PLTR","COIN","MSTR"],
+  custom:       []
+};
+
+function drawSteps(){ stepsEl.innerHTML=''; for(let i=0;i<TOTAL;i++){const s=document.createElement('i'); if(i<=step)s.className='on'; stepsEl.appendChild(s);} }
+async function api(path, body){
+  const r = await fetch(path,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body||{})});
+  const j = await r.json().catch(()=>({})); return {ok:r.ok, j};
+}
+function msg(el, kind, text){ el.className='msg '+kind; el.textContent=text; }
+
+function render(){ drawSteps(); [unlock,llm,telegram,risk,watchlist,schedule,done][step](); }
+
+// 0 — unlock
+function unlock(){
+  card.innerHTML = `<h2>Claim this instance</h2>
+   <p class="sub">Enter the one-time setup code printed in your deploy logs.</p>
+   <input id="code" placeholder="XXXX-XXXX" autocomplete="off">
+   <div id="m" class="msg"></div>
+   <button class="go" id="b">Continue</button>`;
+  document.getElementById('b').onclick = async ()=>{
+    const {ok,j} = await api('/api/unlock',{code:document.getElementById('code').value.trim().toUpperCase()});
+    if(ok){ step=1; render(); } else msg(document.getElementById('m'),'err',j.error||'wrong code');
+  };
+}
+
+// 1 — LLM
+function llm(){
+  card.innerHTML = `<h2>How will Bourse think?</h2>
+   <p class="sub">Pick how to power it. Bourse never starts until this checks out.</p>
+   <div class="opts" id="modes">
+     <div class="opt" data-mode="subscription" data-prov="anthropic"><b>My Claude subscription</b><span>No per-use cost · paste a Claude Code token (sk-ant-oat…)</span></div>
+     <div class="opt" data-mode="subscription" data-prov="openai-codex"><b>My ChatGPT / Codex subscription</b><span>No per-use cost · paste a Codex CLI token</span></div>
+     <div class="opt" data-mode="api" data-prov="anthropic"><b>Anthropic API key</b><span>Pay per use · sk-ant-api…</span></div>
+     <div class="opt" data-mode="api" data-prov="openai"><b>OpenAI API key</b><span>Pay per use · sk-…</span></div>
+     <div class="opt" data-mode="api" data-prov="gemini"><b>Google Gemini key</b><span>Pay per use · AIza…</span></div>
+     <div class="opt" data-mode="local" data-prov="ollama"><b>Local model (Ollama)</b><span>Free · needs Ollama running on this server, or a reachable Ollama URL</span></div>
+   </div>
+   <div id="secretWrap" style="display:none">
+     <label id="secLbl">Paste it here</label>
+     <input id="secret" autocomplete="off" spellcheck="false">
+   </div>
+   <div id="m" class="msg"></div>
+   <button class="go" id="b" disabled>Validate &amp; continue</button>`;
+  let sel=null;
+  document.querySelectorAll('#modes .opt').forEach(o=>o.onclick=()=>{
+    document.querySelectorAll('#modes .opt').forEach(x=>x.classList.remove('sel'));
+    o.classList.add('sel'); sel={mode:o.dataset.mode, provider:o.dataset.prov};
+    document.getElementById('secretWrap').style.display='block';
+    document.getElementById('secLbl').textContent =
+      sel.provider==='ollama' ? 'Ollama URL (blank = this server, http://localhost:11434)' : 'Paste your key / token';
+    document.getElementById('b').disabled=false;
+  });
+  document.getElementById('b').onclick = async ()=>{
+    const btn=document.getElementById('b'); btn.disabled=true; btn.textContent='Checking…';
+    const secret=document.getElementById('secret').value.trim();
+    const {ok,j} = await api('/api/llm',{mode:sel.mode,provider:sel.provider,secret});
+    if(ok){ data.llm={...sel,model:j.model}; msg(document.getElementById('m'),'ok','Connected to '+j.model+'.'); setTimeout(()=>{step=2;render();},700); }
+    else { msg(document.getElementById('m'),'err',j.error||'failed'); btn.disabled=false; btn.textContent='Validate & continue'; }
+  };
+}
+
+// 2 — Telegram
+function telegram(){
+  card.innerHTML = `<h2>Where should briefings go?</h2>
+   <p class="sub">Make a bot in 30s: open <a href="https://t.me/BotFather" target="_blank">@BotFather</a> → New Bot → paste the token it gives you.</p>
+   <label>Bot token</label>
+   <input id="tok" placeholder="123456:ABC-…" autocomplete="off" spellcheck="false">
+   <button class="go" id="bv">Connect bot</button>
+   <div id="connected" style="display:none">
+     <div class="msg ok" id="okbot"></div>
+     <p class="sub" style="margin-top:14px">Now open your bot in Telegram and send it any message, then:</p>
+     <button class="go ghost" id="bc">I messaged the bot</button>
+   </div>
+   <div id="m" class="msg"></div>`;
+  document.getElementById('bv').onclick = async ()=>{
+    const {ok,j}=await api('/api/telegram',{token:document.getElementById('tok').value.trim()});
+    if(ok){ data.tg.user=j.bot_username;
+      document.getElementById('okbot').textContent='Bot @'+j.bot_username+' connected.';
+      document.getElementById('connected').style.display='block';
+    } else msg(document.getElementById('m'),'err',j.error||'failed');
+  };
+  document.getElementById('bc').onclick = async ()=>{
+    const r=await fetch('/api/telegram/chat',{method:'POST'}); const j=await r.json();
+    if(j.found){ msg(document.getElementById('m'),'ok','Linked to '+(j.name||'you')+'. (We sent a test message.)'); setTimeout(()=>{step=3;render();},800); }
+    else msg(document.getElementById('m'),'err','No message seen yet — send your bot a message, then tap again.');
+  };
+}
+
+// 3 — risk
+function risk(){
+  card.innerHTML = `<h2>What's your style?</h2>
+   <p class="sub">This sets your default watchlist and how Bourse frames risk.</p>
+   <div class="opts">
+     <div class="opt" data-r="conservative"><b>Conservative</b><span>Blue chips, dividends, lower volatility</span></div>
+     <div class="opt" data-r="balanced"><b>Balanced</b><span>Big tech + index core</span></div>
+     <div class="opt" data-r="aggressive"><b>Aggressive</b><span>High-beta names, small caps, momentum</span></div>
+     <div class="opt" data-r="custom"><b>Custom</b><span>I'll pick my own</span></div>
+   </div>`;
+  document.querySelectorAll('.opt').forEach(o=>o.onclick=()=>{
+    data.profile.risk=o.dataset.r; data.profile.watchlist=[...WATCH[o.dataset.r]]; step=4; render();
+  });
+}
+
+// 4 — watchlist
+function watchlist(){
+  const list = data.profile.watchlist;
+  card.innerHTML = `<h2>Your watchlist</h2>
+   <p class="sub">Edit freely. Tap to remove; add a ticker below.</p>
+   <div class="chips" id="chips"></div>
+   <label>Add ticker</label>
+   <input id="add" placeholder="e.g. INTC" autocomplete="off" style="text-transform:uppercase">
+   <button class="go" id="b">Continue</button>`;
+  const chips=document.getElementById('chips');
+  const draw=()=>{ chips.innerHTML=''; list.forEach((t,i)=>{const c=document.createElement('span');c.className='chip sel';c.textContent=t+' ✕';c.onclick=()=>{list.splice(i,1);draw();};chips.appendChild(c);}); };
+  draw();
+  document.getElementById('add').addEventListener('keydown',e=>{ if(e.key==='Enter'){const v=e.target.value.trim().toUpperCase(); if(v&&!list.includes(v))list.push(v); e.target.value=''; draw();}});
+  document.getElementById('b').onclick=()=>{ if(list.length){step=5;render();} };
+}
+
+// 5 — schedule
+function schedule(){
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/New_York';
+  card.innerHTML = `<h2>When and how</h2>
+   <p class="sub">A short, scannable briefing — top calls, why they matter.</p>
+   <div class="row2">
+     <div><label>Briefing time</label><input id="time" type="time" value="07:00"></div>
+     <div><label>Timezone</label><input id="tz" value="${tz}"></div>
+   </div>
+   <label>Depth</label>
+   <select id="depth"><option value="headline">Headline (1 min)</option><option value="standard" selected>Standard (3 min)</option><option value="deep">Deep dive (5+ min)</option></select>
+   <div id="m" class="msg"></div>
+   <button class="go" id="b">Finish setup</button>`;
+  document.getElementById('b').onclick = async ()=>{
+    data.profile.brief_time=document.getElementById('time').value;
+    data.profile.timezone=document.getElementById('tz').value.trim();
+    data.profile.depth=document.getElementById('depth').value;
+    const p={risk:data.profile.risk,watchlist:data.profile.watchlist,brief_time:data.profile.brief_time,timezone:data.profile.timezone,depth:data.profile.depth};
+    await api('/api/profile',p);
+    const {ok,j}=await api('/api/finish',{});
+    if(ok){ step=6; render(); } else msg(document.getElementById('m'),'err',j.error||'failed');
+  };
+}
+
+// 6 — done
+function done(){
+  card.innerHTML = `<h2>You're set 🎉</h2>
+   <p class="sub">Bourse is live. We just sent a confirmation to your Telegram. From now on it briefs you on schedule — and keeps score on every call.</p>
+   <a href="/status"><button class="go">View status</button></a>`;
+}
+
+render();
+</script>
+</body>
+</html>

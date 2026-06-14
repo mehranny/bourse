@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+if command -v gitleaks >/dev/null 2>&1; then
+  gitleaks protect --staged --redact || { echo "gitleaks: secret detected — commit blocked"; exit 1; }
+fi

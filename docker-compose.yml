@@ -1,0 +1,13 @@
+services:
+  bourse:
+    build: .
+    image: bourse:dev
+    ports:
+      - "${BOURSE_PORT:-8080}:8080"
+    environment:
+      # Encryption key for secrets at rest. Keep it OFF the ./data volume so
+      # snapshots/backups of data hold only ciphertext. Set in .env (gitignored).
+      - BOURSE_SECRET_KEY=${BOURSE_SECRET_KEY:-}
+    volumes:
+      - ./data:/data
+    restart: unless-stopped
