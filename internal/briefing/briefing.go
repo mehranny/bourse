@@ -5,6 +5,7 @@ package briefing
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -12,8 +13,21 @@ import (
 	"bourse/internal/ledger"
 )
 
+// brainHeader labels which brain produced this briefing and, in one line, what
+// makes it different — so the two daily messages (lite vs pro) are distinguishable
+// and self-explanatory in the shared chat.
+func brainHeader(sb *strings.Builder) {
+	switch os.Getenv("BOURSE_BRAIN") {
+	case "pro", "remote":
+		sb.WriteString("🔵 PRO brain — Tier-0 classifiers (FinBERT + embedding rerank) feed Claude's Fermi/simulation reasoning, then Platt-calibrated.\n\n")
+	default:
+		sb.WriteString("🟢 LITE brain — your own LLM reasoning over free data (prices + news) with FinBERT sentiment signals.\n\n")
+	}
+}
+
 func Compose(now time.Time, b brain.ResearchBundle, sc ledger.Score) string {
 	var sb strings.Builder
+	brainHeader(&sb)
 	fmt.Fprintf(&sb, "📊 Bourse — %s\n", now.Format("Mon Jan 2"))
 	if b.Summary != "" {
 		fmt.Fprintf(&sb, "%s\n", b.Summary)
