@@ -2,3 +2,7 @@ data/
 .git/
 *.md
 .githooks/
+**/.venv
+**/__pycache__
+*.pyc
+braindata

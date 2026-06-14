@@ -1,0 +1,29 @@
+services:
+  bourse:
+    build: .
+    image: bourse:dev
+    ports:
+      - "${BOURSE_PORT:-8080}:8080"
+    environment:
+      # Encryption key for secrets at rest. Keep it OFF the ./data volume so
+      # snapshots/backups of data hold only ciphertext. Set in .env (gitignored).
+      - BOURSE_SECRET_KEY=${BOURSE_SECRET_KEY:-}
+      - BOURSE_BRAIN=pro
+      - BRAIN_URL=http://brainsvc:8000
+    volumes:
+      - ./data:/data
+    restart: unless-stopped
+    depends_on:
+      - brainsvc
+
+  brainsvc:
+    build:
+      context: .
+      dockerfile: brainsvc/Dockerfile
+    environment:
+      - CLAUDE_CODE_OAUTH_TOKEN=${CLAUDE_CODE_OAUTH_TOKEN:-}
+      - HF_HOME=/data/hf
+    volumes:
+      - ./braindata:/data
+    mem_limit: 4500m
+    restart: unless-stopped

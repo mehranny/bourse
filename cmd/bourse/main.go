@@ -11,7 +11,9 @@ import (
 	"os"
 	"time"
 
+	"bourse/internal/brain"
 	"bourse/internal/brain/lite"
+	"bourse/internal/brain/remote"
 	"bourse/internal/briefing"
 	"bourse/internal/deliver"
 	"bourse/internal/ledger"
@@ -63,7 +65,14 @@ func runBrief(dataDir string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
-	b := lite.New(st, loadLens(dataDir))
+	var b brain.Brain
+	switch os.Getenv("BOURSE_BRAIN") {
+	case "remote", "pro":
+		url := env("BRAIN_URL", "http://brainsvc:8000")
+		b = remote.New(url)
+	default:
+		b = lite.New(st, loadLens(dataDir))
+	}
 	bundle, err := b.Research(ctx, st.State.Profile.Watchlist, st.State.Profile)
 	if err != nil {
 		return err
