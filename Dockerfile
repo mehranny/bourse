@@ -1,9 +1,14 @@
-# --- build the static Go binary (web assets are embedded) ---
+# --- build the Go binary (web assets are embedded) ---
+# CGO is required: onnxruntime_go (optional FinBERT sentiment) wraps the ORT C
+# API via cgo. The golang:1.26-bookworm image ships gcc; the runtime stage is
+# glibc-based (Debian) so the dynamically-linked binary runs there. The ORT
+# shared lib itself is dlopen'd lazily, so the binary still runs without it
+# unless sentiment is enabled.
 FROM golang:1.26-bookworm AS build
 WORKDIR /src
 COPY go.mod ./
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /bourse ./cmd/bourse
+RUN CGO_ENABLED=1 GOOS=linux go build -trimpath -ldflags="-s -w" -o /bourse ./cmd/bourse
 
 # --- runtime: needs node + the Claude CLI so subscription mode can generate ---
 FROM node:22-bookworm-slim
