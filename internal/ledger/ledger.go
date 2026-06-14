@@ -22,6 +22,7 @@ const genesis = "000000000000000000000000000000000000000000000000000000000000000
 
 type Entry struct {
 	ID         string  `json:"id"`
+	Brain      string  `json:"brain,omitempty"` // "lite" | "pro" (empty = legacy lite)
 	Symbol     string  `json:"symbol"`
 	Direction  string  `json:"direction"`
 	Prob       float64 `json:"prob"`
@@ -86,12 +87,17 @@ func (l *Ledger) Record(now time.Time, calls []brain.Call) error {
 		return err
 	}
 	defer f.Close()
+	brainTag := os.Getenv("BOURSE_BRAIN")
+	if brainTag == "" {
+		brainTag = "lite"
+	}
 	for i, c := range calls {
 		if c.RefPrice == 0 {
 			continue
 		}
 		e := Entry{
 			ID:         fmt.Sprintf("%s-%s-%d", c.Symbol, now.Format("20060102"), i),
+			Brain:      brainTag,
 			Symbol:     c.Symbol, Direction: c.Direction, Prob: c.Prob, RefPrice: c.RefPrice,
 			Horizon: c.Horizon, CreatedUTC: now.UTC().Format(time.RFC3339),
 			ResolveOn: resolveDate(now, c.Horizon), PrevHash: prev,
