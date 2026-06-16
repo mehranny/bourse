@@ -7,69 +7,83 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 var httpc = &http.Client{Timeout: 20 * time.Second}
 
-// tgLimit is the Telegram sendMessage hard cap. We split at tgSplit to leave
-// a small headroom for any encoding overhead.
-const tgLimit = 4096
+// tgSplit is the character limit we target per chunk, leaving headroom below
+// Telegram's 4096-character hard cap.
 const tgSplit = 4000
 
-// chunk splits text into slices each no longer than limit characters.
+// chunk splits text into slices each no longer than limit *characters* (runes).
 // It prefers to split on newline boundaries so no line is cut mid-way;
-// it hard-splits only when a single line exceeds limit.
-// Joining the returned slices with "\n" reconstructs the original content
-// (minus any leading/trailing blank lines introduced by the split).
+// it hard-splits only when a single line exceeds limit, always on rune
+// boundaries so multi-byte characters (e.g. emoji) are never corrupted.
+//
+// Reassembly contract:
+//   - Newline-split lines are joined with "\n" to recover the original.
+//   - A hard-split line's pieces are joined with "" (no separator).
 func chunk(text string, limit int) []string {
-	if len(text) <= limit {
+	if utf8.RuneCountInString(text) <= limit {
 		return []string{text}
 	}
 
 	var chunks []string
 	lines := strings.Split(text, "\n")
 	var cur strings.Builder
+	curRunes := 0 // rune count of cur's current content
 
 	for i, line := range lines {
-		// If a single line exceeds the limit, hard-split it.
-		if len(line) > limit {
+		lineRunes := utf8.RuneCountInString(line)
+
+		// If a single line exceeds the limit, hard-split it on rune boundaries.
+		if lineRunes > limit {
 			// Flush whatever is buffered first.
 			if cur.Len() > 0 {
 				chunks = append(chunks, cur.String())
 				cur.Reset()
+				curRunes = 0
 			}
-			for len(line) > limit {
-				chunks = append(chunks, line[:limit])
-				line = line[limit:]
+			r := []rune(line)
+			for len(r) > limit {
+				chunks = append(chunks, string(r[:limit]))
+				r = r[limit:]
 			}
-			if len(line) > 0 {
-				cur.WriteString(line)
+			if len(r) > 0 {
+				cur.WriteString(string(r))
+				curRunes = len(r)
 			}
 			continue
 		}
 
 		// Would adding this line (plus a newline separator) overflow the chunk?
 		sep := 0
-		if cur.Len() > 0 {
+		if curRunes > 0 {
 			sep = 1 // for the "\n" between lines
 		}
-		if cur.Len()+sep+len(line) > limit {
+		if curRunes+sep+lineRunes > limit {
 			chunks = append(chunks, cur.String())
 			cur.Reset()
+			curRunes = 0
 		}
 
-		if cur.Len() > 0 {
+		if curRunes > 0 {
 			cur.WriteByte('\n')
+			curRunes++
 		}
 		cur.WriteString(line)
+		curRunes += lineRunes
 
 		// If this is the last line, flush.
 		if i == len(lines)-1 && cur.Len() > 0 {
 			chunks = append(chunks, cur.String())
 			cur.Reset()
+			curRunes = 0
 		}
 	}
 
@@ -86,9 +100,14 @@ func chunk(text string, limit int) []string {
 // boundaries) and sent in order. On any non-200 response, the response body
 // is included in the error for diagnosability.
 func Telegram(token string, chatID int64, text string) error {
-	for _, part := range chunk(text, tgSplit) {
+	parts := chunk(text, tgSplit)
+	n := len(parts)
+	if n > 1 {
+		log.Printf("telegram: sending %d chunks", n)
+	}
+	for i, part := range parts {
 		if err := telegramSend(token, chatID, part); err != nil {
-			return err
+			return fmt.Errorf("telegram send chunk %d/%d: %w", i+1, n, err)
 		}
 	}
 	return nil

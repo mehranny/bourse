@@ -3,6 +3,7 @@ package deliver
 import (
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 func TestChunk_ShortText(t *testing.T) {
@@ -80,5 +81,22 @@ func TestChunk_EmptyString(t *testing.T) {
 	got := chunk("", 4000)
 	if len(got) != 1 || got[0] != "" {
 		t.Fatalf("expected single empty chunk, got %v", got)
+	}
+}
+
+func TestChunk_LongEmojiLine_NoBrokenRunes(t *testing.T) {
+	// a single line of multi-byte runes longer than the limit
+	line := strings.Repeat("🟢", 50) // 50 emoji, one line, > limit chars below
+	chunks := chunk(line, 10)
+	for _, c := range chunks {
+		if utf8.RuneCountInString(c) > 10 {
+			t.Fatalf("chunk exceeds limit: %d runes", utf8.RuneCountInString(c))
+		}
+		if !utf8.ValidString(c) {
+			t.Fatalf("chunk has broken UTF-8: %q", c)
+		}
+	}
+	if strings.Join(chunks, "") != line {
+		t.Fatalf("reassembly lost content")
 	}
 }
