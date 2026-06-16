@@ -62,7 +62,7 @@ func runBrief(dataDir string) error {
 		return fmt.Errorf("not configured yet — finish the setup wizard")
 	}
 	now := time.Now()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
 	defer cancel()
 
 	var b brain.Brain

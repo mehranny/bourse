@@ -21,7 +21,7 @@ type Remote struct {
 }
 
 func New(url string) *Remote {
-	return &Remote{url: url, hc: &http.Client{Timeout: 8 * time.Minute}}
+	return &Remote{url: url, hc: &http.Client{Timeout: 20 * time.Minute}}
 }
 
 func (b *Remote) Research(ctx context.Context, watchlist []string, profile store.Profile) (brain.ResearchBundle, error) {
