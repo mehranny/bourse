@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	"bourse/internal/brain"
@@ -30,6 +31,12 @@ func main() {
 		}
 		return
 	}
+	if len(os.Args) > 1 && os.Args[1] == "watchlist" {
+		if err := runWatchlist(dataDir, os.Args[2:]); err != nil {
+			log.Fatalf("watchlist: %v", err)
+		}
+		return
+	}
 	if len(os.Args) > 1 && os.Args[1] == "probe" { // test free data sources, no config
 		syms := os.Args[2:]
 		if len(syms) == 0 {
@@ -46,6 +53,54 @@ func main() {
 		return
 	}
 	runWizard(dataDir, env("BOURSE_PORT", "8080"))
+}
+
+// runWatchlist implements `bourse watchlist [set SYM1 SYM2 ...]`.
+// With no args it prints the current watchlist.
+// With "set SYM…" it replaces the watchlist (uppercased, de-duped, order preserved).
+func runWatchlist(dataDir string, args []string) error {
+	st, err := store.Load(dataDir)
+	if err != nil {
+		return fmt.Errorf("load config (run onboarding first): %w", err)
+	}
+
+	if len(args) == 0 {
+		// Print current watchlist.
+		wl := st.State.Profile.Watchlist
+		if len(wl) == 0 {
+			fmt.Println("watchlist: (empty)")
+		} else {
+			fmt.Println("watchlist:", strings.Join(wl, " "))
+		}
+		return nil
+	}
+
+	if args[0] != "set" {
+		return fmt.Errorf("unknown watchlist subcommand %q — usage: bourse watchlist [set SYM1 SYM2 ...]", args[0])
+	}
+
+	syms := args[1:]
+	if len(syms) == 0 {
+		return fmt.Errorf("usage: bourse watchlist set SYM1 SYM2 ...")
+	}
+
+	// Uppercase, de-dup preserving order.
+	seen := make(map[string]bool, len(syms))
+	deduped := make([]string, 0, len(syms))
+	for _, s := range syms {
+		upper := strings.ToUpper(s)
+		if !seen[upper] {
+			seen[upper] = true
+			deduped = append(deduped, upper)
+		}
+	}
+
+	st.State.Profile.Watchlist = deduped
+	if err := st.Save(); err != nil {
+		return fmt.Errorf("save state: %w", err)
+	}
+	fmt.Println("watchlist set to:", strings.Join(deduped, " "))
+	return nil
 }
 
 func runBrief(dataDir string) error {

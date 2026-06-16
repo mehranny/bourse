@@ -72,6 +72,22 @@ func (s *Store) DataDir() string       { return s.dir }
 func (s *Store) LLMSecret() string     { return s.dec(s.State.LLM.Secret, "llm") }
 func (s *Store) TelegramToken() string { return s.dec(s.State.TelegramTok, "telegram") }
 
+// Save writes the current State back to state.json (atomically via temp+rename).
+// Encrypted fields (LLM secret, telegram token) are already ciphertext in State,
+// so a plain re-marshal preserves them.
+func (s *Store) Save() error {
+	b, err := json.MarshalIndent(s.State, "", "  ")
+	if err != nil {
+		return err
+	}
+	dst := filepath.Join(s.dir, "state.json")
+	tmp := dst + ".tmp"
+	if err := os.WriteFile(tmp, b, 0o600); err != nil {
+		return err
+	}
+	return os.Rename(tmp, dst)
+}
+
 func (s *Store) loadKey() error {
 	if v := os.Getenv("BOURSE_SECRET_KEY"); v != "" {
 		h := sha256.Sum256([]byte(v))
