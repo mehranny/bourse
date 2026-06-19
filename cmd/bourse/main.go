@@ -2,11 +2,13 @@
 //
 //	bourse          — onboarding wizard (default)
 //	bourse brief    — gather → reason → score → send one briefing to Telegram
+//	bourse notify   — send a message read from stdin to the configured Telegram chat
 package main
 
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"strings"
@@ -34,6 +36,12 @@ func main() {
 	if len(os.Args) > 1 && os.Args[1] == "watchlist" {
 		if err := runWatchlist(dataDir, os.Args[2:]); err != nil {
 			log.Fatalf("watchlist: %v", err)
+		}
+		return
+	}
+	if len(os.Args) > 1 && os.Args[1] == "notify" { // send stdin to the configured Telegram chat
+		if err := runNotify(dataDir); err != nil {
+			log.Fatalf("notify: %v", err)
 		}
 		return
 	}
@@ -100,6 +108,34 @@ func runWatchlist(dataDir string, args []string) error {
 		return fmt.Errorf("save state: %w", err)
 	}
 	fmt.Println("watchlist set to:", strings.Join(deduped, " "))
+	return nil
+}
+
+// runNotify sends a message read from stdin to the configured Telegram chat,
+// reusing the agent's own decrypted token + deliver.Telegram (so the token never
+// leaves the agent and >4096-char messages are chunked). Used by ops tooling
+// (e.g. the nightly review drafter) that must post to the same chat as briefings
+// without holding the secret itself.
+func runNotify(dataDir string) error {
+	st, err := store.Load(dataDir)
+	if err != nil {
+		return fmt.Errorf("load config (run onboarding first): %w", err)
+	}
+	if st.State.ChatID == 0 || st.TelegramToken() == "" {
+		return fmt.Errorf("no telegram destination configured — finish onboarding first")
+	}
+	raw, err := io.ReadAll(os.Stdin)
+	if err != nil {
+		return fmt.Errorf("read stdin: %w", err)
+	}
+	text := strings.TrimRight(string(raw), "\n")
+	if strings.TrimSpace(text) == "" {
+		return fmt.Errorf("empty message on stdin")
+	}
+	if err := deliver.Telegram(st.TelegramToken(), st.State.ChatID, text); err != nil {
+		return err
+	}
+	log.Printf("notify: sent %d runes", len([]rune(text)))
 	return nil
 }
 
